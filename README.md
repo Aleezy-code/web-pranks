@@ -32,6 +32,9 @@ The project combines modern frontend development with animation, physics simulat
 
 > 🎯 **The idea:** Big visual chaos, playful creativity, and no intentional changes to the original website's content on its actual server.
 
+**[webfun.click](https://webfun.click/)** — Prank any website with wild visual effects. Watch CNN get smashed by a wrecking ball. Make Reddit fall to pieces. Throw a surprise birthday party on your least-favorite homepage.
+
+
 ## 🎮 Features
 
 | Feature | Description |
