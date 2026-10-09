@@ -1,0 +1,89 @@
+import { PageInfo, log, ll, setBackgroundAndCreateDomObjects, CollisionCategory, CollisonGroup } from '../modhelper'
+
+export type DragInfo = {
+	name: string
+	x: number
+	y: number
+	width: number
+	height: number
+}
+
+export const DEBUG_DRAG_EVENT = 'debug:drag'
+
+export function doPageEffect(page: PageInfo) {
+	const pageScene = new PageScene(page)
+	page.game!.scene.add(mySceneConfig.key!, pageScene)
+	return pageScene
+}
+
+const mySceneConfig: Phaser.Types.Scenes.SettingsConfig = {
+	active: true,
+	visible: true,
+	key: `PageScene`,
+	physics: {
+		default: 'matter',
+		matter: {
+			//debug: true,
+			gravity: { x: 0, y: 1 }
+		}
+	}
+
+}
+
+type GameObjectwithMatterBody = Phaser.GameObjects.Image & Phaser.GameObjects.Rectangle & {
+	body: MatterJS.BodyType
+};
+export class PageScene extends Phaser.Scene {
+	backgroundRects: GameObjectwithMatterBody[] = []
+
+	constructor(public pageInfo: PageInfo) {
+		super(mySceneConfig);
+		log(ll.info, 'constructing scene')
+	}
+
+	public preload() {
+		log(ll.info, `start`)
+	}
+
+	public async create() {
+		log(ll.info, 'creating scene')
+		const domDensity = .1
+		const domRestitution = 0
+		this.matter.add.mouseSpring({})
+
+		const { domBackgroundRects: backgroundRectangles, domMatterImages } = setBackgroundAndCreateDomObjects(this, this.pageInfo, false, true)
+
+		backgroundRectangles.forEach(rect => {
+			this.backgroundRects.push(this.matter.add.gameObject(rect, {
+				ignoreGravity: true, density: domDensity, restitution: domRestitution, collisionFilter: {
+					group: CollisonGroup.Dom,
+					mask: CollisionCategory.ground | CollisionCategory.movingDom | CollisionCategory.default,
+					category: CollisionCategory.dom
+				}
+			}) as GameObjectwithMatterBody)
+		});
+
+		const allObjects = [...this.backgroundRects, ...domMatterImages] as (GameObjectwithMatterBody & { displayWidth: number; displayHeight: number })[]
+		allObjects.forEach(obj => {
+			obj.setInteractive()
+			this.input.setDraggable(obj)
+		})
+
+		this.input.on('drag', (_pointer: Phaser.Input.Pointer, gameObject: GameObjectwithMatterBody & { displayWidth: number; displayHeight: number; x: number; y: number }, dragX: number, dragY: number) => {
+			gameObject.x = dragX
+			gameObject.y = dragY
+			const info: DragInfo = {
+				name: gameObject.name,
+				x: Math.round(dragX),
+				y: Math.round(dragY),
+				width: Math.round(gameObject.displayWidth),
+				height: Math.round(gameObject.displayHeight),
+			}
+			window.dispatchEvent(new CustomEvent(DEBUG_DRAG_EVENT, { detail: info }))
+		})
+	}
+
+}
+
+
+

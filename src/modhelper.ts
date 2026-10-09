@@ -1,0 +1,215 @@
+import { PageInfo } from "./domtoobjects";
+import { log, ll } from './util'
+export type { PageInfo } from "./domtoobjects"
+export { log, ll } from './util'
+
+export interface PrankSceneI {
+	name: string
+}
+
+export type GameObjectwithMatterBody = Phaser.GameObjects.Image & Phaser.GameObjects.Rectangle & {
+	body: MatterJS.BodyType
+};
+
+type RectangeWithDynamicBody = Phaser.GameObjects.Rectangle & {
+	body: Phaser.Physics.Arcade.Body;
+};
+
+export enum CollisonGroup {
+	Dom = -2
+}
+export enum CollisionCategory {
+	none = 0,
+	default = 1,
+	ground = 2,
+	domBackground = 4,
+	dom = 8,
+	movingDom = 16
+}
+/** returns center of start and end */
+export function center(start: number, end: number) {
+
+	return start + (end - start) / 2
+}
+
+/**
+ * returns promise that resolves in time given by milliSeconds
+ * @param milliSeconds 
+ * bla bla
+ * more
+ */
+export async function ms(milliSeconds: number) {
+
+	return new Promise<void>(resolve => {
+		setTimeout(() => {
+			resolve();
+		}, milliSeconds);
+	});
+}
+
+export function getRandomInt(max: number) {
+	return Math.floor(Math.random() * max);
+}
+
+type DomObjects = {
+	domBackgroundRects: Phaser.GameObjects.Rectangle[]
+	domArcadeBackgroundRects: RectangeWithDynamicBody[]
+	domImages: Phaser.GameObjects.Image[]
+	domArcadeImages: Phaser.Types.Physics.Arcade.ImageWithDynamicBody[]
+	domMatterImages: Phaser.Physics.Matter.Image[]
+}
+
+/**
+		Sets background color of scene to match that of the web page,
+		Adds rectangles to the scene to match the web page elements that had different background colors than the whole page, 
+		Adds an image for each visible web page element to the scene as an image game object,optionally using Arcade and/or Matter images instead.
+
+ * 
+ * @param scene 
+ * 
+ * @param pageInfo 
+ */
+export function setBackgroundAndCreateDomObjects(scene: Phaser.Scene, pageInfo: PageInfo, useArcade = true, useMatter = false): DomObjects {
+	const domBackgroundRects: Phaser.GameObjects.Rectangle[] = []
+	const domArcadeBackgroundRects: RectangeWithDynamicBody[] = []
+	const domImages: Phaser.GameObjects.Image[] = []
+	const domArcadeImages: Phaser.Types.Physics.Arcade.ImageWithDynamicBody[] = []
+	const domMatterImages: Phaser.Physics.Matter.Image[] = []
+
+	if (pageInfo.bgColor)
+		scene.cameras.main.setBackgroundColor(pageInfo.bgColor)
+	let i = 0
+	for (const backgroundRect of pageInfo.backgroundRects) {
+		const rect = scene.add.rectangle(center(backgroundRect.boundingRect.x, backgroundRect.boundingRect.right), center(backgroundRect.boundingRect.y, backgroundRect.boundingRect.bottom), backgroundRect.boundingRect.width, backgroundRect.boundingRect.height, backgroundRect.bgColor)
+		rect.name = `bgRect-${i++}`
+		domBackgroundRects.push(rect)	
+	}
+
+	if (useArcade || useMatter) {
+		if (useArcade) {
+			pageInfo.domElementsImages.forEach((domElement, i) => {
+				const texKey = `dom${i}`
+				const tex = scene.textures.get(texKey)
+				const glTex = tex?.source?.[0]?.glTexture
+				log(ll.trace, `creating ArcadeImage ${texKey}: texExists=${tex?.key !== '__MISSING'} glTexture=${!!glTex}`)
+				const img = scene.physics.add.image(center(domElement.boundingRect.x, domElement.boundingRect.right), center(domElement.boundingRect.y, domElement.boundingRect.bottom), texKey, '__BASE')
+				img.name = `domArcadeImage-${i}`
+				domArcadeImages.push(img)
+			})
+			domBackgroundRects.forEach((rect) => {
+				domArcadeBackgroundRects.push(scene.physics.add.existing(rect) as RectangeWithDynamicBody)
+			})
+		}
+		if (useMatter) {
+			pageInfo.domElementsImages.forEach((domElement, i) => {
+				const img = scene.matter.add.image(center(domElement.boundingRect.x, domElement.boundingRect.right), center(domElement.boundingRect.y, domElement.boundingRect.bottom), `dom${i}`, '__BASE', {
+					ignoreGravity: true, collisionFilter: {
+						group: CollisonGroup.Dom,
+						mask: CollisionCategory.ground | CollisionCategory.movingDom | CollisionCategory.default,
+						category: CollisionCategory.dom
+					}
+				})
+				img.name = `domMatterImage-${i}`
+				domMatterImages.push(img)
+			})
+
+		}
+	}
+	else {
+		pageInfo.domElementsImages.forEach((domElement, i) => {
+			const img = scene.add.image(center(domElement.boundingRect.x, domElement.boundingRect.right), center(domElement.boundingRect.y, domElement.boundingRect.bottom), `dom${i}`, '__BASE')
+			img.name = `domImage-${i}`		
+			domImages.push(img)	
+		})	
+	}
+
+	return { domBackgroundRects, domArcadeBackgroundRects, domImages, domArcadeImages, domMatterImages }
+}
+
+type Rect = {
+	x: number,
+	y: number,
+	width: number,
+	height: number
+}
+/**
+ * returns coordinates for the pieces that an object should be broken up into
+ * @param width 
+ * @param height 
+ */
+export function getSplits(width: number, height: number, xImpact: number | undefined = undefined, yImpact: number | undefined = undefined): Rect[] {
+	const halfWidth = width / 2
+	const halfHeight = height / 2
+	let xSplit = halfWidth
+	let ySplit = halfHeight
+
+	if (xImpact != undefined && yImpact != undefined) {
+		const margin = 0.2
+		xSplit = Math.max(width * margin, Math.min(width * (1 - margin), xImpact))
+		ySplit = Math.max(height * margin, Math.min(height * (1 - margin), yImpact))
+	}
+
+
+	let splits: Rect[] = [
+		{ x: 0, y: 0, width: xSplit, height: ySplit },
+		{ x: xSplit, y: 0, width: xSplit, height: ySplit },
+		{ x: 0, y: ySplit, width: xSplit, height: ySplit },
+		{ x: xSplit, y: ySplit, width: xSplit, height: ySplit },
+	]
+	if (width / height > 4 / 3) {   // split horizontally
+		splits = [
+			{ x: 0, y: 0, width: xSplit, height: height },
+			{ x: xSplit, y: 0, width: width - xSplit, height: height }]
+	}
+	else if (height / width > 4 / 3) { // split vertically
+		splits = [
+			{ x: 0, y: 0, width: width, height: ySplit },
+			{ x: 0, y: ySplit, width: width, height: ySplit }]
+	}
+	return splits
+}
+
+/**
+ * Breaks up a gameObject into pieces and returns those pieces in an array of gameObjects. You should generally then destroy the original gameObject.
+ * Currently works for Rectangles and Images.
+ * @param xImpact 
+ * @param yImpact 
+ * @param gameObject 
+ */
+export function breakUp(xImpact: number, yImpact: number, gameObject: GameObjectwithMatterBody): Phaser.GameObjects.GameObject[] | null {
+
+	const MinArea = 50
+	if (gameObject.type !== 'Image' && gameObject.type !== 'Rectangle')
+		return null
+	const width = gameObject.displayWidth
+	const height = gameObject.displayHeight
+	if (width * height < MinArea)
+		return null
+	log(ll.info, `breaking up ${gameObject.body.id} ${width}x${height}`)
+	const scene = gameObject.scene
+	const x = gameObject.x
+	const y = gameObject.y
+	const newObjects: Phaser.GameObjects.GameObject[] = []
+	const splits = getSplits(width, height)
+	if (gameObject.type === 'Image') {
+		const texture = gameObject.texture
+		const frameX = gameObject.frame?.cutX || 0
+		const frameY = gameObject.frame?.cutY || 0
+		const fragBase = texture.frameTotal
+		splits.forEach((split, i) => {
+			const frame = texture.add(fragBase + i, 0, frameX + split.x, frameY + split.y, split.width, split.height)
+			newObjects.push(scene.add.image(x + split.x, y + split.y, texture.key, frame!.name))
+		})
+	}
+	else  {
+		const fillColor = gameObject.fillColor
+		splits.forEach((split, i) => {
+		
+				newObjects.push(scene.add.rectangle(x + split.x, y + split.y, split.width, split.height,fillColor))
+			
+		})
+	} 
+	
+	return newObjects
+
+}
